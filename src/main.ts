@@ -51,15 +51,10 @@ async function bootstrap() {
     url: redisUrl,
   });
 
-  // redisClient.on('error', (err) => console.error('Redis Client Error', err));
-
-  // try {
-  //   await redisClient.connect();
-  //   console.log(`✅ Conectado a Redis para sesisones en: ${redisUrl}`);
-  // } catch (error) {
-  //   console.error('❌ Error conectando a Redis:', error);
-  //   throw error; // Detener si Redis no está disponible
-  // }
+  redisClient.on('error', (err) => console.error('Redis (sesiones) error:', err?.message ?? err));
+  // Sin connect() el store rechaza cada comando con "The client is closed" y el login falla en /security/token.
+  await redisClient.connect();
+  console.log(`Redis de sesiones conectado en ${redisUrl}`);
 
   app.use(
     session({
