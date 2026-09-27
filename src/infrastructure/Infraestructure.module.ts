@@ -29,7 +29,7 @@ import { MetricsModule } from './metrics/metrics.module';
 import { PasswordResetRepositoryAdapter } from './adapter/passwordResetRepository.adapter';
 import { UserProfileRepositoryAdapter } from './adapter/userProfileRepository.adapter';
 import { CacheModule } from '@nestjs/cache-manager';
-import { RedisStore } from 'connect-redis';
+import KeyvRedis from '@keyv/redis';
 import { CacheRepositoryAdapter } from './adapter/cacheRepository.adapter';
 import { ConsoleEmailAdapter } from './adapter/consoleEmail.adapter';
 import { EMAIL_SERVICE } from '../core/domain/puertos/outbound/IEmailService.interface';
@@ -52,26 +52,17 @@ import { EMAIL_SERVICE } from '../core/domain/puertos/outbound/IEmailService.int
       FuncionalidadEntity,
       RefreshSessionEntity,
     ]),
-    CacheModule.register({
+    // Caché compartida en Redis (códigos de autorización, access token por sesión, OTP): nada vive en la instancia.
+    // Las claves las lee también el BFF, así que deben estar en el mismo Redis/db.
+    CacheModule.registerAsync({
       isGlobal: true,
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => {
-        const redisHost = configService.get<string>(
-          'redis.host',
-          'seis_erp_redis',
-        );
-        const redisPort = configService.get<number>('redis.port', 6379);
-        const redisTTL = configService.get<number>('redis.ttl', 3600) * 1000; 
-        const redisPass = configService.get<string>('redis.password'); 
-        return {
-          isGlobal: true,
-          store: RedisStore,
-          host: redisHost,
-          port: redisPort,
-          ttl: redisTTL, // 1 hora por defecto
-          password: redisPass,
-        };
+        const host = configService.get<string>('redis.host', 'seis_erp_redis');
+        const port = configService.get<number>('redis.port', 6379);
+        const db = configService.get<number>('redis.db', 0);
+        return { stores: [new KeyvRedis(`redis://${host}:${port}/${db}`)] };
       },
     }),
   ],

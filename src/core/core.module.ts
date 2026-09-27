@@ -12,7 +12,6 @@ import { PasswordResetUseCase } from './aplication/useCase/passwordReset/passwor
 import { AUTHORIZATION_USE_CASE } from './domain/puertos/inbound/IAuthorizationUseCase.interface';
 import { SESSION_USE_CASE } from './domain/puertos/inbound/ISessionUseCase.interface';
 import { PASSWORD_RESET_USE_CASE } from './domain/puertos/inbound/IPasswordResetUseCase.interface';
-import { CacheModule } from '@nestjs/cache-manager';
 import { IUsuarioRepository } from './domain/puertos/outbound/iUsuarioRepository.interface';
 import { IContactoRepository } from './domain/puertos/outbound/iContactoRepository.interface';
 import { IRolRepository } from './domain/puertos/outbound/iRolRepository.interface';
@@ -172,7 +171,6 @@ export class CoreModule {
             module: CoreModule,
             global: true,
             imports: [
-                CacheModule.register(),
                 ...modules,
             ],
             providers: [
