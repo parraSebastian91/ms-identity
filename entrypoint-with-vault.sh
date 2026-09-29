@@ -15,6 +15,58 @@ if [ -z "$VAULT_TOKEN" ]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Preflight: que Vault esté OPERATIVO antes de leer nada.
+#
+# `vault_get` es `curl | jq -r '... // empty'`: con Vault sellado el curl
+# devuelve 503, jq no encuentra el campo, devuelve vacío, y sin esto el script
+# exportaba la variable VACÍA y seguía adelante imprimiendo los mensajes de
+# éxito. La app arrancaba con DATABASE_HOST="" y el problema recién se
+# manifestaba treinta líneas después como ECONNREFUSED contra Postgres —
+# cuatro eslabones más abajo que la causa.
+#
+# Ver docs/infra/proyectos-infra/findings/vault-arranque/ en SEIS_APP.
+# ---------------------------------------------------------------------------
+abortar() {
+    echo ""
+    echo "❌ $1" >&2
+    echo "   VAULT_ADDR=$VAULT_ADDR" >&2
+    echo "   No se arranca la aplicación con la configuración vacía." >&2
+    exit 1
+}
+
+preflight_vault() {
+    local salud sellado
+    salud=$(curl -s -m 10 "$VAULT_ADDR/v1/sys/health?standbyok=true&sealedcode=200&uninitcode=200" 2>/dev/null) \
+        || abortar "Vault no responde."
+    [ -n "$salud" ] || abortar "Vault no responde."
+
+    sellado=$(printf '%s' "$salud" | jq -r '.sealed // empty')
+    if [ "$sellado" = "true" ]; then
+        abortar "Vault está SELLADO: no puede entregar secretos.
+   Unsellalo con:  docker compose -f proyectos-infra/docker-compose.yml up vault-init
+   (el servicio vault-unsealer debería hacerlo solo — revisá que esté arriba)."
+    fi
+
+    curl -s -m 10 -o /dev/null -w '%{http_code}' \
+        -H "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/auth/token/lookup-self" \
+        | grep -q '^200$' || abortar "El VAULT_TOKEN no es válido o expiró."
+}
+
+# Aborta si alguna variable imprescindible quedó vacía. Las opcionales
+# (MIN_LOG_LEVEL, DATABASE_SSL, etc.) no se listan a propósito.
+requerir() {
+    local faltan=""
+    for v in "$@"; do
+        eval "local valor=\${$v:-}"
+        [ -n "$valor" ] || faltan="$faltan $v"
+    done
+    [ -z "$faltan" ] || abortar "Vault respondió pero faltan secretos:$faltan
+   Revisá que existan las rutas secret/data/flowis/* y que el token las pueda leer."
+}
+
+preflight_vault
+
 # Función helper (KV v2)
 vault_get() {
     local path=$1
@@ -107,6 +159,8 @@ export NODE_ENV=$(vault_get "secret/data/flowis/ms-identity" "NODE_ENV")
 export PORT=$(vault_get "secret/data/flowis/ms-identity" "PORT")
 export PORT="${PORT:-3000}"
 export MIN_LOG_LEVEL=$(vault_get "secret/data/flowis/ms-identity" "MIN_LOG_LEVEL")
+
+requerir DATABASE_HOST DATABASE_PORT DATABASE_NAME DATABASE_USER REDIS_HOST REDIS_PORT JWT_ACCESS_SECRET
 
 echo "🚀 Iniciando aplicación..."
 echo ""
